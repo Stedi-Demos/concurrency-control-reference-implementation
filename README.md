@@ -50,6 +50,10 @@ sequenceDiagram
     R3->>S: Attempt to obtain slot
     S-->>R3: No slot available
     Note over R3: Wait (exponential backoff)
+
+    API-->>R1: Response (after 5s)
+    R1->>S: Release slot (1/2)
+
     R3->>S: Retry obtain slot
     S->>R3: Slot granted (2/2)
     R3->>API: Make API request
@@ -64,11 +68,8 @@ sequenceDiagram
     Note over R4: Max retries reached
     R4->>R4: Fail (unable to obtain slot)
 
-    API-->>R1: Response (after 5s)
-    R1->>S: Release slot (1/2)
-
     API-->>R2: Response (after 30s)
-    R2->>S: Release slot (0/2)
+    R2->>S: Release slot (1/2)
 
     API-->>R3: Response (after 60s)
     R3->>S: Release slot (0/2)
