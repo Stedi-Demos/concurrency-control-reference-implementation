@@ -8,12 +8,6 @@ Managing concurrency in API interactions, especially with the Stedi Eligibility 
 
 This variability in response times means that traditional RPS-based concurrency management strategies may not be sufficient. Instead, more sophisticated approaches are needed to ensure efficient use of resources while avoiding overload or rate limiting issues.
 
-## Key Concepts
-
-- **Variable Response Times**: Requests to the Stedi Eligibility Check APIs can take anywhere from a few seconds to 90 seconds to complete.
-- **Concurrency vs. RPS**: Due to the wide range of possible response times, concurrency management in this context is not simply about limiting requests per second.
-- **Adaptive Strategies**: The examples in this repository demonstrate adaptive concurrency management techniques that account for the unpredictable nature of response times.
-
 ## Concurrency Management Strategy
 
 In these examples, we use DynamoDB to implement a semaphore-based concurrency control mechanism. Here's how it works:
@@ -25,6 +19,24 @@ In these examples, we use DynamoDB to implement a semaphore-based concurrency co
 5. After the request is complete (or fails), we release the semaphore.
 
 This approach allows us to manage the concurrency of requests effectively, ensuring we don't overwhelm the Stedi APIs while still maintaining efficient throughput.
+
+### Lease System for Deadlock Prevention
+
+To prevent deadlocks caused by processes that may have died without releasing their semaphore hold, it's crucial to implement a lease system. This system works as follows:
+
+1. When a process obtains a semaphore, it's granted a lease with an expiration time.
+2. The process must periodically renew its lease while it's still using the semaphore.
+3. If a process fails to renew its lease before it expires, the system assumes the process has died.
+4. A background process or the next process attempting to acquire a semaphore can then clean up these expired leases, releasing the semaphore slots back to the pool.
+
+This lease system ensures that even if processes crash or network issues occur, the semaphore slots will eventually be freed, preventing indefinite deadlocks.
+
+### Important Notes
+
+The DynamoDB-based semaphore implementation provided in these examples works well for managing concurrency at lower to moderate scales ~20-30 concurrency or so. It's a good starting point for many applications. (Depending on your average response times if they are longer, this can push higher to 50 or more concurrency.) However, have extreme amounts of clients hammering on the semaphore will always be contentious and may hurt your throughput.
+
+- For applications requiring tremendous scale or very high levels of concurrency, a more robust solution like Redis might be more appropriate. For more information on implementing high-scale semaphores with Redis, refer to the Redis documentation on [Fair Semaphores](https://redis.io/ebook/part-2-core-concepts/chapter-6-application-components-in-redis/6-3-counting-semaphores/6-3-2-fair-semaphores/).
+
 
 ### Concurrency Flow Diagram
 
