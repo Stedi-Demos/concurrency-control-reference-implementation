@@ -8,12 +8,6 @@ Managing concurrency in API interactions, especially with the Stedi Eligibility 
 
 This variability in response times means that traditional RPS-based concurrency management strategies may not be sufficient. Instead, more sophisticated approaches are needed to ensure efficient use of resources while avoiding overload or rate limiting issues.
 
-## Key Concepts
-
-- **Variable Response Times**: Requests to the Stedi Eligibility Check APIs can take anywhere from a few seconds to 90 seconds to complete.
-- **Concurrency vs. RPS**: Due to the wide range of possible response times, concurrency management in this context is not simply about limiting requests per second.
-- **Adaptive Strategies**: The examples in this repository demonstrate adaptive concurrency management techniques that account for the unpredictable nature of response times.
-
 ## Concurrency Management Strategy
 
 In these examples, we use DynamoDB to implement a semaphore-based concurrency control mechanism. Here's how it works:
@@ -25,6 +19,100 @@ In these examples, we use DynamoDB to implement a semaphore-based concurrency co
 5. After the request is complete (or fails), we release the semaphore.
 
 This approach allows us to manage the concurrency of requests effectively, ensuring we don't overwhelm the Stedi APIs while still maintaining efficient throughput.
+
+## DynamoDB Table Structure
+
+The DynamoDB table used for the semaphore implementation requires the following structure:
+
+- Table Name: As specified in your configuration
+- Primary Key:
+  - Partition Key (pk): String
+  - Sort Key (sk): String
+- Additional Attributes:
+  - count: Number (used for the semaphore count)
+  - expiresAt: Number (used for lock expiration)
+
+Example items in the table:
+
+1. Semaphore count item:
+   ```
+   { pk: "<semaphoreName>", sk: "COUNT", count: <number> }
+   ```
+
+2. Lock items:
+   ```
+   { pk: "<semaphoreName>", sk: "LOCK#<lockId>", expiresAt: <timestamp> }
+   ```
+
+Make sure to provision adequate read and write capacity for your table to handle the expected throughput of your application.
+
+## Handling Cancelled Requests
+
+It's important to note that cancelling a request on your side does not automatically cancel the request or release the lease on Stedi's side. This can lead to potential issues with resource management and concurrency control. Because of this, we don't recommend cancelling requests, just let them run to natural completion and response from Stedi.
+
+## Lease System for Deadlock Prevention
+
+To prevent deadlocks caused by processes that may have died without releasing their semaphore hold, it's crucial to implement a lease system. This system works as follows:
+
+1. When a process obtains a semaphore, it's granted a lease with an expiration time.
+2. The process must periodically renew its lease while it's still using the semaphore.
+3. If a process fails to renew its lease before it expires, the system assumes the process has died.
+4. A background process or the next process attempting to acquire a semaphore can then clean up these expired leases, releasing the semaphore slots back to the pool.
+
+This lease system ensures that even if processes crash or network issues occur, the semaphore slots will eventually be freed, preventing indefinite deadlocks.
+
+## Important Notes
+
+The DynamoDB-based semaphore implementation provided in these examples works well for managing concurrency at lower to moderate scales ~20-30 concurrency or so. It's a good starting point for many applications. (Depending on your average response times if they are longer, this can push higher to 50 or more concurrency.) However, have extreme amounts of clients hammering on the semaphore will always be contentious and may hurt your throughput.
+
+- For applications requiring tremendous scale or very high levels of concurrency, a more robust solution like Redis might be more appropriate. For more information on implementing high-scale semaphores with Redis, refer to the Redis documentation on [Fair Semaphores](https://redis.io/ebook/part-2-core-concepts/chapter-6-application-components-in-redis/6-3-counting-semaphores/6-3-2-fair-semaphores/).
+
+
+## Example Class Usage
+
+### Batch Eligibility and Realtime Eligibility Semaphore Configurations
+
+Let's say you are alloted 15 concurrency within Stedi's eligibility check API. You can configure your semaphores like so, so that you'll always have at least 5 slots available for realtime checks. We may also want to tweak the retry logic to be more aggressive or less aggressive depending on our specific use case.
+
+```typescript
+const batchSemaphore = new DynamoDBSemaphore(client, {
+        tableName: 'MySemaphoreTable',
+        semaphoreName: 'BatchConcurrency',
+        maxLocks: 10,
+        lockTtlSeconds: 60, // generally you want this to be at least as long as the longest request time in Stedi
+        retryConfig: {
+            maxRetries: 30,
+            baseDelay: 500, // milliseconds
+            maxDelay: 10_000 // milliseconds
+        },
+        debug: false // set to true to see debug logs
+    });
+
+const realtimeSemaphore = new DynamoDBSemaphore(client, {
+        tableName: 'MySemaphoreTable',
+        semaphoreName: 'RealtimeConcurrency',
+        maxLocks: 5,
+        lockTtlSeconds: 60, // generally you want this to be at least as long as the longest request time in Stedi
+        retryConfig: {
+            maxRetries: 10,
+            baseDelay: 100, // milliseconds
+            maxDelay: 1_000 // milliseconds
+        },
+        debug: false // set to true to see debug logs
+    });
+
+// usage
+const lockId = await batchSemaphore.acquireLock(); // this can fail, so consider retrying or looping until you obtain the lock
+
+// do some work
+await Promise.resolve(() => setTimeout(2000));
+
+await semaphore.releaseLock(lockId); // will try its best to release the lock
+
+```
+
+See tests in the source code for more examples.
+
 
 ### Concurrency Flow Diagram
 
