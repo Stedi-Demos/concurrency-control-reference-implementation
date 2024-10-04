@@ -20,6 +20,36 @@ In these examples, we use DynamoDB to implement a semaphore-based concurrency co
 
 This approach allows us to manage the concurrency of requests effectively, ensuring we don't overwhelm the Stedi APIs while still maintaining efficient throughput.
 
+## DynamoDB Table Structure
+
+The DynamoDB table used for the semaphore implementation requires the following structure:
+
+- Table Name: As specified in your configuration
+- Primary Key:
+  - Partition Key (pk): String
+  - Sort Key (sk): String
+- Additional Attributes:
+  - count: Number (used for the semaphore count)
+  - expiresAt: Number (used for lock expiration)
+
+Example items in the table:
+
+1. Semaphore count item:
+   ```
+   { pk: "<semaphoreName>", sk: "COUNT", count: <number> }
+   ```
+
+2. Lock items:
+   ```
+   { pk: "<semaphoreName>", sk: "LOCK#<lockId>", expiresAt: <timestamp> }
+   ```
+
+Make sure to provision adequate read and write capacity for your table to handle the expected throughput of your application.
+
+## Handling Cancelled Requests
+
+It's important to note that cancelling a request on your side does not automatically cancel the request or release the lease on Stedi's side. This can lead to potential issues with resource management and concurrency control. Because of this, we don't recommend cancelling requests, just let them run to natural completion and response from Stedi.
+
 ### Lease System for Deadlock Prevention
 
 To prevent deadlocks caused by processes that may have died without releasing their semaphore hold, it's crucial to implement a lease system. This system works as follows:
