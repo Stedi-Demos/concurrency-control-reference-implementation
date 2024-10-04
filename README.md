@@ -67,7 +67,6 @@ The DynamoDB-based semaphore implementation provided in these examples works wel
 
 - For applications requiring tremendous scale or very high levels of concurrency, a more robust solution like Redis might be more appropriate. For more information on implementing high-scale semaphores with Redis, refer to the Redis documentation on [Fair Semaphores](https://redis.io/ebook/part-2-core-concepts/chapter-6-application-components-in-redis/6-3-counting-semaphores/6-3-2-fair-semaphores/).
 
-
 ## Example Class Usage
 
 ### Batch Eligibility and Realtime Eligibility Semaphore Configurations
@@ -112,7 +111,6 @@ await semaphore.releaseLock(lockId); // will try its best to release the lock
 ```
 
 See tests in the source code for more examples.
-
 
 ### Concurrency Flow Diagram
 
